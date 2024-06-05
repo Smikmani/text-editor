@@ -15,10 +15,6 @@
 
 typedef struct Cursor
 {
-	int x;
-	int y;
-	int currentLine;
-	int positionLine;
 	int position;
 } Cursor;
 
@@ -33,13 +29,14 @@ typedef struct Line {
 } Line;
 
 typedef struct Data{
+	bool changed;
 	char *data;
 	Line *lines;
 	size_t lineCount;
 	size_t count;
 } Data;
 
-static Data data = {0} ;
+static Data data = {.changed = true} ;
 
 static Cursor cur = {0};
 
@@ -50,94 +47,132 @@ static int windowHeight = 600;
 
 
 
-void addChar(char *c, Data *data)
+void addChar(char *c)
 {
-	for(int i = 0; i<data->lineCount; ++i)
-	{
-		printf("{%d,%d}",data->lines[i].start,data->lines[i].end);
-	}
-	printf("\n");
-	if(data->data==NULL)
+	if(data.data==NULL)
 	{
 		
 
-		data->count += 1;
+		data.count += 1;
 
-		data->data = (char *) malloc(sizeof(char) * (2)); 
+		data.data = (char *) malloc(sizeof(char) * (2)); 
 	
-		data->data[1] = '\0';
-		data->data = strcpy(data->data, c);
+		data.data[1] = '\0';
+		data.data = strcpy(data.data, c);
 		
-		cur.positionLine += 1;
-
-		cur.x += CHAR_WIDTH;
-
-		if(c=="\n")
-		{
-			cur.x = 0;
-			cur.y += CHAR_HEIGHT;
-			cur.positionLine = 0;
-			cur.currentLine += 1;	
-		}
+		cur.position += 1;
 
 		return;
 	}
 
-	int positionToAdd = data->lines[cur.currentLine].start + cur.positionLine;
+	int positionToAdd = cur.position;
 	
 		
-	char *placeholder = (char *) malloc(sizeof(char) * (data->count+1));
+	char *placeholder = (char *) malloc(sizeof(char) * (data.count+1));
 
-	placeholder[data->count] = '\0';
+	placeholder[data.count] = '\0';
 
 	if(placeholder == NULL)
 	{
 		exit(1);
 	}
 	
-	placeholder = strcpy(placeholder, data->data);
+	placeholder = strcpy(placeholder, data.data);
 	
-	data->data = (char *) malloc(sizeof(char) * (data->count+2)); 
+	data.data = (char *) malloc(sizeof(char) * (data.count+2)); 
 	
-	data->data[data->count+1] = '\0';
+	data.data[data.count+1] = '\0';
 	
 	for(int i =0; i < positionToAdd ; ++i)
 	{
-		data->data[i] = placeholder[i];
+		data.data[i] = placeholder[i];
 
 	}
 
-	data->data[positionToAdd] = *c;
+	data.data[positionToAdd] = *c;
 	
-	for(int i =positionToAdd ; i < data->count ; ++i )
+	for(int i =positionToAdd ; i < data.count ; ++i )
 	{
-		data->data[i+1] = placeholder[i];
+		data.data[i+1] = placeholder[i];
 
 	}
 
-	cur.positionLine += 1;
-	data->count += 1;
-
-
-	
-	cur.x += CHAR_WIDTH;
-	if(c=="\n")
-	{
-		cur.x = 0;
-		cur.y += CHAR_HEIGHT;
-		cur.currentLine += 1;
-		cur.positionLine = 0;
-	}	
-
-	if(cur.x == (windowWidth - (windowWidth % CHAR_WIDTH) ))
-	{
-		cur.x = 0;
-		cur.y += CHAR_HEIGHT;
-		cur.currentLine += 1;
-		cur.positionLine = 0;
-	}
+	cur.position += 1;
+	data.count += 1;
 
 	free(placeholder);
+}
+
+void removeChar()
+{
+
+	if(data.count==0 || cur.position == 0)
+	{
+		return;
+	}
+
+	int positionToRemove = cur.position - 1;
+	
+		
+	char *placeholder = (char *) malloc(sizeof(char) * (data.count+1));
+
+	placeholder[data.count] = '\0';
+
+	if(placeholder == NULL)
+	{
+		exit(1);
+	}
+	
+	placeholder = strcpy(placeholder, data.data);
+	
+	data.data = (char *) malloc(sizeof(char) * (data.count+2)); 
+	
+	data.data[data.count+1] = '\0';
+	
+	for(int i =0; i < positionToRemove ; ++i)
+	{
+		data.data[i] = placeholder[i];
+
+	}
+
+	
+	for(int i = positionToRemove + 1; i < data.count ; ++i )
+	{
+		data.data[i] = placeholder[i+1];
+
+	}
+
+	cur.position -= 1;
+	data.count -= 1;
+
+	free(placeholder);
+}
+
+int getCursorLineIndex()
+{
+	
+	for(int i = 0; i < data.lineCount; ++i)
+	{
+		if(data.lines[i].start <= cur.position && data.lines[i].end >= cur.position)
+		{
+			return i;
+		}
+	}
+
+	return 0;
+}
+
+void getCharacterWidth(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color, int *width, char c )
+{
+	char str[2] = {c ,'\0'};
+	SDL_Surface * surface = TTF_RenderText_Solid(font,
+ 												str, 
+												color);
+
+	SDL_Texture * texture = SDL_CreateTextureFromSurface(renderer, surface);
+	int y;
+	SDL_QueryTexture(texture,NULL,NULL,width,&y);
+
 }
 
 void moveCursorUp(void)
@@ -146,27 +181,23 @@ void moveCursorUp(void)
 	{
 		return;
 	}
+	int cursorLineIndex = getCursorLineIndex();
 
-	if(cur.currentLine>0)
-	{
-		cur.currentLine-=1;
-	}
-	else
-	{
-		return;
-	}
+	Line currentLine = data.lines[cursorLineIndex];
 
-	cur.y = cur.currentLine*CHAR_HEIGHT;
-							
+	int cursorPositionOnLine = cur.position - currentLine.start;
 
-	if((data.lines[cur.currentLine].end - data.lines[cur.currentLine].start)<cur.positionLine)
+	if(cursorLineIndex>0)
 	{
-		cur.positionLine = data.lines[cur.currentLine].end - data.lines[cur.currentLine].start;
-		cur.x = ( data.lines[cur.currentLine].end - data.lines[cur.currentLine].start ) * CHAR_WIDTH;
-		return;
-	}
-	cur.x = cur.positionLine * CHAR_WIDTH;
-	
+		if((data.lines[cursorLineIndex-1].end - data.lines[cursorLineIndex-1].start) < cursorPositionOnLine)
+		{
+			cur.position = data.lines[cursorLineIndex-1].end ;
+		}
+		else
+		{
+			cur.position = data.lines[cursorLineIndex-1].start + cursorPositionOnLine;
+		}
+	}	
 }
 
 void moveCursorDown(void)
@@ -175,186 +206,172 @@ void moveCursorDown(void)
 	{
 		return;
 	}
-	if(cur.currentLine < data.lineCount-1)
-	{
-		cur.currentLine += 1;
-	}
-	else
-	{
-		return;
-	}
+	int cursorLineIndex = getCursorLineIndex();
 
-	cur.y = cur.currentLine*CHAR_HEIGHT;
-							
-	int lineLength = data.lines[cur.currentLine].end - data.lines[cur.currentLine].start;
+	Line currentLine = data.lines[cursorLineIndex];
 
-	if(lineLength < cur.positionLine)
+	int cursorPositionOnLine = cur.position - currentLine.start;
+
+	if(cursorLineIndex < data.lineCount-1)
 	{
-		cur.positionLine = lineLength;
-		cur.x = lineLength  * CHAR_WIDTH;
-		return;
+		if((data.lines[cursorLineIndex+1].end - data.lines[cursorLineIndex+1].start) < cursorPositionOnLine)
+		{
+			cur.position = data.lines[cursorLineIndex+1].end ;
+		}
+		else
+		{
+			cur.position = data.lines[cursorLineIndex+1].start + cursorPositionOnLine;
+		}
 	}
-	cur.x = cur.positionLine * CHAR_WIDTH;
-	
 }
 void moveCursorRight(void)
 {
-	if(data.count==0)
-	{
-		return;
-	}
-	int lineLength = data.lines[cur.currentLine].end - data.lines[cur.currentLine].start;
 	
-	if(cur.positionLine < lineLength)
+	if(cur.position < data.count)
 	{
-		cur.positionLine += 1;
+		cur.position += 1;
 	}
-	else if(cur.positionLine == lineLength)
-	{
-
-		cur.positionLine += 1;
-		
-		if(cur.currentLine<data.lineCount-1)
-		{
-			cur.currentLine += 1;
-			cur.positionLine = 0;
-		}
-	}
-	
-	cur.x = cur.positionLine * CHAR_WIDTH;
-	cur.y = cur.currentLine * CHAR_HEIGHT;
 	
 }
 
 void moveCursorLeft(void)
 {
-	if(data.count==0)
+	if(cur.position > 0)
 	{
-		return;
+		cur.position -= 1;
 	}
-
-	int lineLength = data.lines[cur.currentLine].end - data.lines[cur.currentLine].start;
-	
-	if(cur.positionLine > 0)
-	{
-		cur.positionLine -= 1;
-	}
-	else if(cur.positionLine == 0)
-	{
-		
-		if(cur.currentLine>0)
-		{
-			cur.currentLine -= 1;
-			cur.positionLine = data.lines[cur.currentLine].end;
-		}
-	}
-	
-	cur.x = cur.positionLine * CHAR_WIDTH;
-	cur.y = cur.currentLine * CHAR_HEIGHT;
 	
 }
 
-void renderChar(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color,int posX,int posY, char c)
+void renderChar(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color,int *posX,int posY, char c)
 {
-	if(posX == cur.x && posY == cur.y)
-	{
-		SDL_Color color = { 0, 0, 0 };
-	}
+	char str[2] = {c ,'\0'};
 	SDL_Surface * surface = TTF_RenderText_Solid(font,
- 												&c, 
+ 												str, 
 												color);
 
 	SDL_Texture * texture = SDL_CreateTextureFromSurface(renderer, surface);
-	SDL_Rect dstrect = { posX, posY, CHAR_WIDTH, CHAR_HEIGHT };
-
+	int w,h;
+	SDL_QueryTexture(texture,NULL,NULL,&w,&h);
+	SDL_Rect dstrect = { *posX, posY, w, h };
 	SDL_RenderCopy(renderer, texture, NULL, &dstrect);
+	*posX += w;
+
 
 }
 
-void renderText(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color, Data *data)
+void renderText(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color)
 {
 
 
-	if(data->count == 0)
+	if(data.count == 0)
 	{
 		return;
 	}
 
 	int posX = 0;
 	int posY = 0;
-	int position = 0;
 	int startLine = 0;
 	Line lineToAdd = {0};
 	int linesAdded = 0;
 
-	if(data->lineCount>0)
+	if(data.lineCount>0)
 	{
-		data->lineCount = 0;
-		free(data->lines);
-	} 
-	data->lines = (Line *) malloc(sizeof(Line)* 50 );
+		data.lineCount = 0;
+		free(data.lines);
+	}
 
-	if(data->lines == NULL)
+	data.lines = (Line *) malloc(sizeof(Line)* 50 );
+
+	if(data.lines == NULL)
 	{
 		fprintf(stderr, "Memory allocation failed.\n");
 		return;
 	}
 
-	for(int i=0; i < data->count; ++i)
+	for(int i=0; i < data.count; ++i)
 	{
 	
-		if(data->data[i] == '\n'  )
+		if(data.data[i] == '\n'  )
 		{
 			
 			posX =0;
 			posY += CHAR_HEIGHT;
 
-			data->lineCount += 1;
+			data.lineCount += 1;
 
-			lineToAdd.end = i+1;
+			lineToAdd.end = i;
 
-			data->lines[linesAdded] = lineToAdd;
+			data.lines[linesAdded] = lineToAdd;
 
 			linesAdded += 1;
 
-			lineToAdd.start = i + 1;
+			lineToAdd.start = i+1 ;
 			continue;
 		}
 
-		if(posX == (windowWidth - (windowWidth % CHAR_WIDTH)  ))
+		if(posX >= (windowWidth - (windowWidth % CHAR_WIDTH)-30  ))
 		{
 
 			posX = 0;
 			posY += CHAR_HEIGHT;
 
-			data->lineCount += 1;
+			data.lineCount += 1;
 
 			lineToAdd.end = i-1;
 
-			data->lines[linesAdded] = lineToAdd;
+			data.lines[linesAdded] = lineToAdd;
 
 			linesAdded += 1;
 
 			lineToAdd.start = i ;
 		}
 
-		renderChar(renderer,font,color,posX,posY,data->data[i]);
+		renderChar(renderer,font,color,&posX,posY,data.data[i]);
 
-		posX += CHAR_WIDTH;
+		//posX += CHAR_WIDTH;
 
 	}
 	
 	
-	data->lineCount += 1;
-	lineToAdd.end = data->count;
-	data->lines[linesAdded] = lineToAdd;
-
+	data.lineCount += 1;
+	lineToAdd.end = data.count;
+	data.lines[linesAdded] = lineToAdd;
+	for(int i = 0; i < data.lineCount; ++i)
+	{
+		printf("{%d,%d}",data.lines[i].start,data.lines[i].end);
+	}
+	printf("\n");
 }
 
 
-void renderCursor(SDL_Renderer * renderer)
-{
-	SDL_Rect dstrect = { cur.x, cur.y , CHAR_WIDTH, CHAR_HEIGHT };
+void renderCursor(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color)
+{		
+	int currentLineIndex = getCursorLineIndex();
+	int posX = 0;
+	int charWidth = CHAR_WIDTH;
+	if(data.count>0){
+		
+		
+		for(int i = data.lines[currentLineIndex].start ; i < cur.position; ++i)
+		{
+			if(data.data[i]=='\n') continue;
+			getCharacterWidth(renderer,font,color,&charWidth,data.data[i]);
+			posX += charWidth;
+		}
+		
+		if(cur.position==data.lines[currentLineIndex].end)
+		{
+			charWidth = CHAR_WIDTH;
+		}
+		else
+		{
+			getCharacterWidth(renderer,font,color,&charWidth,data.data[cur.position]);
+		}
+	}
+	
+	
+	SDL_Rect dstrect = { posX, currentLineIndex*CHAR_HEIGHT, charWidth, CHAR_HEIGHT };
 
 	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_ADD);
 
@@ -430,28 +447,39 @@ int main(int argc, char *argv[])
 				{
 					switch (event.key.keysym.sym)
 					{
-					case SDLK_RETURN:{
-						addChar("\n",&data);
-
+					case SDLK_BACKSPACE:
+					{
+						data.changed = true;
+						removeChar();
+						break;
+					}
+					case SDLK_RETURN:
+					{	
+						data.changed = true;
+						addChar("\n");
 						break;
 					}
 					case SDLK_UP:
 					{
+						data.changed = true;
 						moveCursorUp();
 						break;
 					}
 					case SDLK_DOWN:
 					{
+						data.changed = true;
 						moveCursorDown();
 						break;
 					}
 					case SDLK_RIGHT:
 					{
+						data.changed = true;
 						moveCursorRight();
 						break;
 					}
 					case SDLK_LEFT:
 					{
+						data.changed = true;
 						moveCursorLeft();
 						break;
 					}
@@ -463,7 +491,8 @@ int main(int argc, char *argv[])
 				break;
 				case SDL_TEXTINPUT:
 				{
-					addChar(event.text.text,&data);
+					data.changed = true;
+					addChar(event.text.text);
 				}
 				break;
 				default:
@@ -472,13 +501,16 @@ int main(int argc, char *argv[])
 					
 			}
 		}
-		
-		SDL_SetRenderDrawColor(renderer,0,0,0,0);
-		SDL_RenderClear(renderer);
-		SDL_GetWindowSize(window, &windowWidth,&windowHeight);
-		renderText(renderer,font,color, &data);
-		renderCursor(renderer);
-		SDL_RenderPresent(renderer);
+		if(data.changed)
+		{
+			SDL_SetRenderDrawColor(renderer,0,0,0,0);
+			SDL_RenderClear(renderer);
+			SDL_GetWindowSize(window, &windowWidth,&windowHeight);
+			renderText(renderer,font,color);
+			renderCursor(renderer,font,color);
+			SDL_RenderPresent(renderer);
+		}
+		data.changed = false;
 		//SDL_Delay(10);
 	}
 
