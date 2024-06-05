@@ -19,6 +19,7 @@ typedef struct Cursor
 	int y;
 	int currentLine;
 	int positionLine;
+	int position;
 } Cursor;
 
 typedef struct Position{
@@ -51,7 +52,11 @@ static int windowHeight = 600;
 
 void addChar(char *c, Data *data)
 {
-	
+	for(int i = 0; i<data->lineCount; ++i)
+	{
+		printf("{%d,%d}",data->lines[i].start,data->lines[i].end);
+	}
+	printf("\n");
 	if(data->data==NULL)
 	{
 		
@@ -62,7 +67,7 @@ void addChar(char *c, Data *data)
 	
 		data->data[1] = '\0';
 		data->data = strcpy(data->data, c);
-
+		
 		cur.positionLine += 1;
 
 		cur.x += CHAR_WIDTH;
@@ -206,16 +211,13 @@ void moveCursorRight(void)
 	}
 	else if(cur.positionLine == lineLength)
 	{
+
 		cur.positionLine += 1;
 		
 		if(cur.currentLine<data.lineCount-1)
 		{
 			cur.currentLine += 1;
 			cur.positionLine = 0;
-		}
-		else
-		{
-			return;
 		}
 	}
 	
@@ -233,21 +235,17 @@ void moveCursorLeft(void)
 
 	int lineLength = data.lines[cur.currentLine].end - data.lines[cur.currentLine].start;
 	
-	if(cur.positionLine < lineLength)
+	if(cur.positionLine > 0)
 	{
-		cur.positionLine += 1;
+		cur.positionLine -= 1;
 	}
-	else if(cur.positionLine == lineLength)
+	else if(cur.positionLine == 0)
 	{
 		
-		if(cur.currentLine<data.lineCount-1)
+		if(cur.currentLine>0)
 		{
-			cur.currentLine += 1;
-			cur.positionLine = 0;
-		}
-		else if(cur.currentLine==data.lineCount-1)
-		{
-			return;
+			cur.currentLine -= 1;
+			cur.positionLine = data.lines[cur.currentLine].end;
 		}
 	}
 	
@@ -256,10 +254,14 @@ void moveCursorLeft(void)
 	
 }
 
-void renderChar(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color,int posX,int posY, char chara)
+void renderChar(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color,int posX,int posY, char c)
 {
+	if(posX == cur.x && posY == cur.y)
+	{
+		SDL_Color color = { 0, 0, 0 };
+	}
 	SDL_Surface * surface = TTF_RenderText_Solid(font,
- 												&chara, 
+ 												&c, 
 												color);
 
 	SDL_Texture * texture = SDL_CreateTextureFromSurface(renderer, surface);
@@ -309,7 +311,7 @@ void renderText(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color, Data 
 
 			data->lineCount += 1;
 
-			lineToAdd.end = i;
+			lineToAdd.end = i+1;
 
 			data->lines[linesAdded] = lineToAdd;
 
@@ -319,7 +321,7 @@ void renderText(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color, Data 
 			continue;
 		}
 
-		if(posX == (windowWidth - (windowWidth % CHAR_WIDTH) - CHAR_WIDTH ))
+		if(posX == (windowWidth - (windowWidth % CHAR_WIDTH)  ))
 		{
 
 			posX = 0;
@@ -344,17 +346,19 @@ void renderText(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color, Data 
 	
 	
 	data->lineCount += 1;
-	lineToAdd.end = data->count-1;
+	lineToAdd.end = data->count;
 	data->lines[linesAdded] = lineToAdd;
 
 }
 
 
-void renderCursor(SDL_Renderer * renderer,  SDL_Color color)
+void renderCursor(SDL_Renderer * renderer)
 {
 	SDL_Rect dstrect = { cur.x, cur.y , CHAR_WIDTH, CHAR_HEIGHT };
 
-	SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_ADD);
+
+	SDL_SetRenderDrawColor(renderer, 10, 255, 255, 150);
 
 	if(SDL_RenderFillRect(renderer,&dstrect)<0)
 	{
@@ -404,6 +408,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "ERROR: Could not create SDL Font: %s\n", SDL_GetError());
         return 1;
 	}
+
 	SDL_Color color = { 250, 250, 250 };
 	
 	
@@ -445,6 +450,11 @@ int main(int argc, char *argv[])
 						moveCursorRight();
 						break;
 					}
+					case SDLK_LEFT:
+					{
+						moveCursorLeft();
+						break;
+					}
 
 					default:
 						break;
@@ -467,7 +477,7 @@ int main(int argc, char *argv[])
 		SDL_RenderClear(renderer);
 		SDL_GetWindowSize(window, &windowWidth,&windowHeight);
 		renderText(renderer,font,color, &data);
-		renderCursor(renderer,color);
+		renderCursor(renderer);
 		SDL_RenderPresent(renderer);
 		//SDL_Delay(10);
 	}
