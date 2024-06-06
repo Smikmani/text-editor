@@ -46,7 +46,6 @@ static int windowWidth = 800;
 static int windowHeight = 600;
 
 
-
 void addChar(char *c)
 {
 	if(data.data==NULL)
@@ -99,7 +98,7 @@ void addChar(char *c)
 
 	cur.position += 1;
 	data.count += 1;
-
+	printf("%s\n",data.data);
 	free(placeholder);
 }
 
@@ -112,7 +111,7 @@ void removeChar()
 	}
 
 	int positionToRemove = cur.position - 1;
-	
+	if(data.data[positionToRemove] == '\n') printf("a\n");
 		
 	char *placeholder = (char *) malloc(sizeof(char) * (data.count+1));
 
@@ -125,9 +124,9 @@ void removeChar()
 	
 	placeholder = strcpy(placeholder, data.data);
 	
-	data.data = (char *) malloc(sizeof(char) * (data.count+2)); 
+	data.data = (char *) malloc(sizeof(char) * (data.count)); 
 	
-	data.data[data.count+1] = '\0';
+	data.data[data.count-1] = '\0';
 	
 	for(int i =0; i < positionToRemove ; ++i)
 	{
@@ -136,9 +135,9 @@ void removeChar()
 	}
 
 	
-	for(int i = positionToRemove + 1; i < data.count ; ++i )
+	for(int i = positionToRemove + 1 ; i < data.count ; ++i )
 	{
-		data.data[i] = placeholder[i+1];
+		data.data[i-1] = placeholder[i];
 
 	}
 
@@ -146,6 +145,7 @@ void removeChar()
 	data.count -= 1;
 
 	free(placeholder);
+	printf("%s\n",data.data);
 }
 
 int getCursorLineIndex()
@@ -337,11 +337,11 @@ void renderText(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color)
 	data.lineCount += 1;
 	lineToAdd.end = data.count;
 	data.lines[linesAdded] = lineToAdd;
-	for(int i = 0; i < data.lineCount; ++i)
-	{
-		printf("{%d,%d}",data.lines[i].start,data.lines[i].end);
-	}
-	printf("\n");
+	// for(int i = 0; i < data.lineCount; ++i)
+	// {
+	// 	printf("{%d,%d}",data.lines[i].start,data.lines[i].end);
+	// }
+	// printf("\n");
 }
 
 
@@ -442,6 +442,12 @@ int main(int argc, char *argv[])
 				
 				case SDL_QUIT:
 					quit = true;
+					break;
+				case SDL_WINDOWEVENT:
+					if(event.window.event == SDL_WINDOWEVENT_RESIZED)
+					{
+						data.changed = true;
+					}
 					break;
 				case SDL_KEYDOWN:
 				{
