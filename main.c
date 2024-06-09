@@ -10,7 +10,7 @@
 #define SCREEN_HEIGHT 600
 #define CHAR_WIDTH 20
 #define CHAR_HEIGHT 30
-
+#define CHANGE_TIME 2000
 
 
 typedef struct Cursor
@@ -18,28 +18,43 @@ typedef struct Cursor
 	int position;
 } Cursor;
 
-typedef struct Position{
-	int x ;
-	int y;
-} Position;
-
-typedef struct Line {
+typedef struct Line 
+{
 	int start;
 	int end;
 } Line;
 
-typedef struct Data{
+typedef enum
+{
+	ADDITION,
+	DELETE
+} ChangeType;
+
+typedef struct Change
+{
+	ChangeType type;
+	int start;
+	int end;
+	char *text;	
+	size_t count;
+} Change;
+
+typedef struct Data
+{
 	bool changed;
 	char *data;
 	Line *lines;
-	size_t lineCount;
+	Change *changes;
 	size_t count;
+	size_t lineCount;
+	size_t changeCount;
+	Uint32 lastTimeChangeAdded;
+	size_t currentChange;
 } Data;
 
-static Data data = {.changed = true} ;
+static Data data = {.changed = true, .count = 0} ;
 
 static Cursor cur = {0};
-
 
 static int windowWidth = 800;
 
@@ -50,8 +65,6 @@ void addChar(char *c)
 {
 	if(data.data==NULL)
 	{
-		
-
 		data.count += 1;
 
 		data.data = (char *) malloc(sizeof(char) * (2)); 
@@ -98,20 +111,14 @@ void addChar(char *c)
 
 	cur.position += 1;
 	data.count += 1;
-	printf("%s\n",data.data);
+
 	free(placeholder);
+
 }
 
 void removeChar()
 {
-
-	if(data.count==0 || cur.position == 0)
-	{
-		return;
-	}
-
 	int positionToRemove = cur.position - 1;
-	if(data.data[positionToRemove] == '\n') printf("a\n");
 		
 	char *placeholder = (char *) malloc(sizeof(char) * (data.count+1));
 
@@ -145,12 +152,10 @@ void removeChar()
 	data.count -= 1;
 
 	free(placeholder);
-	printf("%s\n",data.data);
 }
 
 int getCursorLineIndex()
 {
-	
 	for(int i = 0; i < data.lineCount; ++i)
 	{
 		if(data.lines[i].start <= cur.position && data.lines[i].end >= cur.position)
@@ -224,6 +229,7 @@ void moveCursorDown(void)
 		}
 	}
 }
+
 void moveCursorRight(void)
 {
 	
@@ -241,6 +247,214 @@ void moveCursorLeft(void)
 		cur.position -= 1;
 	}
 	
+}
+
+void initializeChanges(Uint32 time, ChangeType type)
+{
+	if(data.changes != NULL)
+	{
+		free(data.changes);
+	}
+	Change change = {.count = 1, .start = cur.position-1, .end = cur.position-1, .type =  ADDITION};
+	change.text = (char *) malloc(sizeof(char) * (2)); 
+	change.text[0] = data.data[cur.position-1];
+	change.text[1] = '\0';
+
+	data.changes = (Change *) malloc(sizeof(Change)*50);
+	data.changeCount = 1;
+	data.lastTimeChangeAdded = time;
+	data.changes[0] = change;
+	data.currentChange = 1;
+	
+
+}
+
+void updateChanges(Uint32 time, ChangeType type)
+{
+	if(data.currentChange==0)
+	{
+		initializeChanges(time,type);
+		return;
+	}
+
+
+	int indexOfCurrentChange = data.currentChange - 1;
+	size_t sizeOfCurrentChange = data.changes[indexOfCurrentChange].count;
+
+
+	if(data.changes[indexOfCurrentChange].type != type)
+	{
+		Change change = {.count = 1, .start = cur.position - 1, .type = type ,.end = cur.position - 1};
+		change.text = (char *) malloc(sizeof(char) * (2)); 
+		change.text[0] = data.data[cur.position-1];
+		change.text[1] = '\0';
+		data.changes[data.changeCount] = change;
+		data.lastTimeChangeAdded = time;
+		data.currentChange += 1;
+		data.changeCount = data.currentChange;
+
+	}
+	else
+	{
+		if((time - data.lastTimeChangeAdded) / CHANGE_TIME == 0)
+		{
+			
+			char *placeholder = (char *) malloc(sizeof(char) * (sizeOfCurrentChange+1));
+			placeholder[sizeOfCurrentChange] = '\0';
+
+			placeholder = strcpy(placeholder, data.changes[indexOfCurrentChange].text);
+			data.changes[indexOfCurrentChange].text = (char *) malloc(sizeof(char) * (sizeOfCurrentChange+2));
+
+			data.changes[indexOfCurrentChange].text[sizeOfCurrentChange + 1] = '\0';
+			data.changes[indexOfCurrentChange].text = strcpy(data.changes[indexOfCurrentChange].text,placeholder);
+			data.changes[indexOfCurrentChange].text[sizeOfCurrentChange] = data.data[cur.position-1];
+			data.changes[indexOfCurrentChange].count += 1;
+			data.changes[indexOfCurrentChange].end = cur.position-1;
+			
+		}
+		else
+		{
+			data.lastTimeChangeAdded = time;
+			Change change = {.count = 1, .start = cur.position - 1, .type = type ,.end = cur.position - 1};
+			change.text = (char *) malloc(sizeof(char) * (2)); 
+			change.text[0] = data.data[cur.position-1];
+			change.text[1] = '\0';
+			data.changes[indexOfCurrentChange+1] = change;
+			data.currentChange += 1;
+			data.changeCount = data.currentChange;
+		}
+	}
+	
+}
+
+void reverseChange(void)
+{
+	if(data.changeCount == 0 || data.currentChange == 0)
+	{
+		return;
+	}
+	int currentChangeIndex = data.currentChange - 1;
+
+	if(data.changes[currentChangeIndex].type == ADDITION)
+	{
+		
+		int charsToBeRemoved = data.changes[currentChangeIndex].count;
+		char * placeholder = (char *) malloc(sizeof(char) * (data.count + 1));
+		placeholder[data.count] = '\0';
+		placeholder = strcpy(placeholder,data.data);
+		data.data = (char *) malloc(sizeof(char) * (data.count - charsToBeRemoved + 1));
+		data.data[data.count - charsToBeRemoved] = '\0';
+
+		for(int i = 0; i < data.changes[currentChangeIndex].start; ++i)
+
+		{
+			data.data[i] = placeholder[i];
+		}
+
+		for(int i = data.changes[currentChangeIndex].end + 1; i < data.count; ++i)
+		{
+			data.data[i-charsToBeRemoved] = placeholder[i];
+		}
+		cur.position = data.changes[currentChangeIndex].start;
+		data.count -= charsToBeRemoved;
+		printf("%s",data.data);
+		free(placeholder);
+	}
+	else if(data.changes[currentChangeIndex].type == DELETE)
+	{
+		int charsToBeAdded = data.changes[currentChangeIndex].count;
+		char * placeholder = (char *) malloc(sizeof(char) * (data.count + 1));
+		placeholder[data.count] = '\0';
+		placeholder = strcpy(placeholder,data.data);
+		data.data = (char *) malloc(sizeof(char) * (data.count + charsToBeAdded + 1));
+		data.data[data.count + charsToBeAdded] = '\0';
+		for(int i = 0; i < data.changes[currentChangeIndex].end; ++i)
+		{
+			data.data[i] = placeholder[i];
+		}
+
+		
+		for(int i = 0, j = data.changes[currentChangeIndex].end; i < data.changes[currentChangeIndex].count; ++i , ++j)
+		{
+			data.data[j] = data.changes[currentChangeIndex].text[data.changes[currentChangeIndex].count- i - 1];
+		}
+
+		for(int i = data.changes[currentChangeIndex].start + 1; i < data.count + charsToBeAdded; ++i )
+		{
+			data.data[i] = placeholder[i-charsToBeAdded];
+		}
+		cur.position = data.changes[currentChangeIndex].start+1;
+		data.count += charsToBeAdded;
+		free(placeholder);
+
+	}
+
+	data.currentChange -= 1;
+}
+
+void reimplementChange(void)
+{
+	if(data.currentChange == data.changeCount)
+	{
+		return;
+	}
+	int currentChangeIndex = data.currentChange;
+
+	if(data.changes[currentChangeIndex].type == ADDITION)
+	{
+		printf("a\n");
+		int charsToBeAdded = data.changes[currentChangeIndex].count;
+		char * placeholder = (char *) malloc(sizeof(char) * (data.count + 1));
+		placeholder[data.count] = '\0';
+		placeholder = strcpy(placeholder,data.data);
+		data.data = (char *) malloc(sizeof(char) * (data.count + charsToBeAdded + 1));
+		data.data[data.count + charsToBeAdded] = '\0';
+
+		for(int i = 0; i < data.changes[currentChangeIndex].start; ++i)
+		{
+			data.data[i] = placeholder[i];
+		}
+
+		
+		for(int i = 0, j = data.changes[currentChangeIndex].start; i < data.changes[currentChangeIndex].count; ++i , ++j)
+		{
+			data.data[j] = data.changes[currentChangeIndex].text[i];
+		}
+
+		for(int i = data.changes[currentChangeIndex].end + 1; i < data.count + charsToBeAdded; ++i )
+		{
+			data.data[i] = placeholder[i-charsToBeAdded];
+		}
+		cur.position = data.changes[currentChangeIndex].end+1;
+		data.count += charsToBeAdded;
+		free(placeholder);
+
+	}
+	else if(data.changes[currentChangeIndex].type == DELETE)
+	{
+		int charsToBeRemoved = data.changes[currentChangeIndex].count;
+		char * placeholder = (char *) malloc(sizeof(char) * (data.count + 1));
+		placeholder[data.count] = '\0';
+		placeholder = strcpy(placeholder,data.data);
+		data.data = (char *) malloc(sizeof(char) * (data.count - charsToBeRemoved + 1));
+		data.data[data.count - charsToBeRemoved] = '\0';
+
+		for(int i = 0; i < data.changes[currentChangeIndex].end; ++i)
+
+		{
+			data.data[i] = placeholder[i];
+		}
+
+		for(int i = data.changes[currentChangeIndex].start + 1; i < data.count; ++i)
+		{
+			data.data[i-charsToBeRemoved] = placeholder[i];
+		}
+		cur.position = data.changes[currentChangeIndex].end;
+		data.count -= charsToBeRemoved;
+		free(placeholder);
+	}
+
+	data.currentChange += 1;
 }
 
 void renderChar(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color,int *posX,int posY, char c)
@@ -263,7 +477,7 @@ void renderChar(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color,int *p
 void renderText(SDL_Renderer * renderer, TTF_Font * font, SDL_Color color)
 {
 
-
+	
 	if(data.count == 0)
 	{
 		return;
@@ -430,7 +644,7 @@ int main(int argc, char *argv[])
 	
 	
 	bool quit = false;
-
+	bool isCtrlPressed = false;
 	while(!quit)
 	{
 		SDL_Event event;
@@ -453,45 +667,78 @@ int main(int argc, char *argv[])
 				{
 					switch (event.key.keysym.sym)
 					{
-					case SDLK_BACKSPACE:
+						case SDLK_BACKSPACE:
+						{
+							if(data.count!=0 || cur.position != 0)
+							{
+								data.changed = true;
+								updateChanges(SDL_GetTicks(),DELETE);
+								removeChar();
+							}
+							break;
+						}
+						case SDLK_RETURN:
+						{	
+							data.changed = true;
+							addChar("\n");
+							updateChanges(SDL_GetTicks(),ADDITION);
+							break;
+						}
+						case SDLK_UP:
+						{
+							data.changed = true;
+							moveCursorUp();
+							break;
+						}
+						case SDLK_DOWN:
+						{
+							data.changed = true;
+							moveCursorDown();
+							break;
+						}
+						case SDLK_RIGHT:
+						{
+							data.changed = true;
+							moveCursorRight();
+							break;
+						}
+						case SDLK_LEFT:
+						{
+							data.changed = true;
+							moveCursorLeft();
+							break;
+						}
+						case SDLK_LCTRL:
+						{
+							isCtrlPressed = true;
+							break;
+						}
+						case SDLK_RCTRL:
+						{
+							isCtrlPressed = true;
+							break;
+						}
+						default:
+							break;
+					}
+				}
+				break;
+				case SDL_KEYUP:
+				{
+					switch (event.key.keysym.sym)
 					{
-						data.changed = true;
-						removeChar();
-						break;
-					}
-					case SDLK_RETURN:
-					{	
-						data.changed = true;
-						addChar("\n");
-						break;
-					}
-					case SDLK_UP:
-					{
-						data.changed = true;
-						moveCursorUp();
-						break;
-					}
-					case SDLK_DOWN:
-					{
-						data.changed = true;
-						moveCursorDown();
-						break;
-					}
-					case SDLK_RIGHT:
-					{
-						data.changed = true;
-						moveCursorRight();
-						break;
-					}
-					case SDLK_LEFT:
-					{
-						data.changed = true;
-						moveCursorLeft();
-						break;
-					}
-
-					default:
-						break;
+						case SDLK_LCTRL:
+						{
+							isCtrlPressed = false;
+							break;
+						}
+						case SDLK_RCTRL:
+						{
+							isCtrlPressed = false;
+							break;
+						}
+						default:
+							break;
 					}
 				}
 				break;
@@ -499,6 +746,7 @@ int main(int argc, char *argv[])
 				{
 					data.changed = true;
 					addChar(event.text.text);
+					updateChanges(SDL_GetTicks(),ADDITION);
 				}
 				break;
 				default:
@@ -506,6 +754,22 @@ int main(int argc, char *argv[])
 				
 					
 			}
+		}
+		if(isCtrlPressed)
+		{
+			const Uint8* keys =  SDL_GetKeyboardState(NULL);
+			if(keys[SDL_SCANCODE_Z])
+			{
+				data.changed = true;
+				reverseChange();
+			}
+			else if(keys[SDL_SCANCODE_Y])
+			{
+				data.changed = true;
+				reimplementChange();
+			}
+			
+			SDL_Delay(550);
 		}
 		if(data.changed)
 		{
@@ -517,10 +781,17 @@ int main(int argc, char *argv[])
 			SDL_RenderPresent(renderer);
 		}
 		data.changed = false;
-		//SDL_Delay(10);
 	}
 
-
+	if(data.data!=NULL)
+	{
+		free(data.data);
+		free(data.changes);
+	}
+	if(data.lineCount!=0)
+	{
+		free(data.lines);
+	}
 	TTF_Quit();
 	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
